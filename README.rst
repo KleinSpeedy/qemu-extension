@@ -1,6 +1,13 @@
-===========
-QEMU README
-===========
+=====================
+QEMU thesis extension
+=====================
+
+This repository contains two different extensions of the QEMU project.
+Both implementations aim to emulate a 32 bit ARM microcontroller including its
+periphery.
+
+Original README
+===============
 
 QEMU is a generic and open source machine & userspace emulator and
 virtualizer.
