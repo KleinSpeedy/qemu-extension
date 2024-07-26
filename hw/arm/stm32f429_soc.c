@@ -1,7 +1,9 @@
 #include "qemu/osdep.h"
+#include "qemu/units.h"
 #include "qapi/error.h"
 #include "exec/address-spaces.h"
 #include "sysemu/sysemu.h"
+#include "hw/or-irq.h"
 #include "hw/arm/stm32f429_soc.h"
 #include "hw/gpio/stm32f429_gpio.h"
 #include "hw/qdev-clock.h"
@@ -18,12 +20,35 @@ static const uint32_t adc_addr[] = { 0x40012000, 0x40012100, 0x40012200,
                                      0x40012300, 0x40012400, 0x40012500 };
 static const uint32_t spi_addr[] =   { 0x40013000, 0x40003800, 0x40003C00,
                                        0x40013400, 0x40015000, 0x40015400 };
-/* GPIO ports A to K */
-static const uint32_t gpio_addr[] = {
+/* GPIO ports A - K */
+static const uint32_t gpio_addr[STM_NUM_GPIO] = {
     0x40020000, 0x40020400, 0x40020800,
     0x40020C00, 0x40021000, 0x40021400,
     0x40021800, 0x40021C00, 0x40022000,
-    0x40022400, 0x40022800};
+    0x40022400, 0x40022800
+};
+
+struct STM32F429GpioResetCfg {
+    uint32_t moder_val;
+    uint32_t ospeedr_val;
+    uint32_t pupdr_val;
+};
+
+/* Reset values for GPIO ports A - K (MODER, OSPEEDR, PUPDR) */
+/* See RM 8.4.1, 8.4.3 and 8.4.4 */
+static const struct STM32F429GpioResetCfg gpio_reset_cfg[STM_NUM_GPIO] = {
+    {0xA8000000, 0x0C000000, 0x64000000},
+    {0x00000280, 0x000000C0, 0x00000100},
+    {0x00000000, 0x00000000, 0x00000000},
+    {0x00000000, 0x00000000, 0x00000000},
+    {0x00000000, 0x00000000, 0x00000000},
+    {0x00000000, 0x00000000, 0x00000000},
+    {0x00000000, 0x00000000, 0x00000000},
+    {0x00000000, 0x00000000, 0x00000000},
+    {0x00000000, 0x00000000, 0x00000000},
+    {0x00000000, 0x00000000, 0x00000000},
+    {0x00000000, 0x00000000, 0x00000000}
+};
 
 #define EXTI_ADDR                      0x40013C00
 
@@ -216,10 +241,16 @@ static void stm32f429_soc_realize(DeviceState *dev_soc, Error **errp)
     /* GPIO ports A to K */
     for (i = 0; i < STM_NUM_GPIO; i++) {
         dev = DEVICE(&(s->gpio[i]));
+        qdev_prop_set_uint32(dev, "moder_reset_val",
+                             gpio_reset_cfg[i].moder_val);
+        qdev_prop_set_uint32(dev, "ospeedr_reset_val",
+                             gpio_reset_cfg[i].ospeedr_val);
+        qdev_prop_set_uint32(dev, "pupdr_reset_val",
+                             gpio_reset_cfg[i].pupdr_val);
+        busdev = SYS_BUS_DEVICE(dev);
         if (!sysbus_realize(SYS_BUS_DEVICE(&s->gpio[i]), errp)) {
             return;
         }
-        busdev = SYS_BUS_DEVICE(dev);
         sysbus_mmio_map(busdev, 0, gpio_addr[i]);
     }
 

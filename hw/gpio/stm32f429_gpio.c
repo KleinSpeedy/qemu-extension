@@ -4,24 +4,14 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
 #include "hw/gpio/stm32f429_gpio.h"
-#include "qom/object.h"
-#include "qemu/bitops.h"
+#include "migration/vmstate.h"
+#include "hw/qdev-properties.h"
 
 static const char * const type_desc = "STM32F420 Gpio module";
 
-// register reset values
-
-#define OTYPE_RESET_VALUE   0x00000000ul
-#define OSPEEDR_RESET_VALUE 0x00000000ul
-#define PUPDR_RESET_VALUE   0x00000000ul
-#define ODR_RESET_VALUE     0x00000000ul
-#define BSRR_RESET_VALUE    0x00000000ul
-#define LCKR_RESET_VALUE    0x00000000ul
-#define AFRH_RESET_VALUE    0x00000000ul
-#define AFRL_RESET_VALUE    0x00000000ul
+// register reset value unless otherwise specified by ref-manual
+#define DEFAULT_RESET_VALUE 0x00000000ul
 
 // Offsets of GPIO Module registers
 typedef enum StmGpioRegOffset
@@ -38,48 +28,75 @@ typedef enum StmGpioRegOffset
     OFFSET_AFRH = 0x24
 } StmGpioRegOffset;
 
-// Update state of gpio module registers after write operation
-static void update_gpio_state(STM32F429GpioState* s)
-{
-
-}
-
 /* Read from the memory region. @addr is relative to @mr; @size is in bytes */
 static uint64_t stm32f429_gpio_read(void *opaque, hwaddr offset, unsigned size)
 {
     qemu_log("read - addr offset %zu size %u\n", offset, size);
 
-    assert(offset <= STM32F429_GPIO_MMIO_SIZE);
-
-    switch ((StmGpioRegOffset) offset)
+    if(offset <= STM32F429_GPIO_MMIO_SIZE)
     {
-        case OFFSET_MODER ... OFFSET_PUPDR:
+        qemu_log_mask(LOG_GUEST_ERROR, "GPIO: offset out of bounds");
+        return 0;
+    }
+
+    STM32F429GpioState *s = opaque;
+
+    switch((StmGpioRegOffset) offset)
+    {
+        case OFFSET_MODER:
         {
-            qemu_log("read MODER .. PUPDR\n");
-            break;
+            return s->moder;
+        }
+        case OFFSET_OTYPER:
+        {
+            return s->otyper;
+        }
+        case OFFSET_OSPEEDR:
+        {
+            return s->ospeedr;
+        }
+        case OFFSET_PUPDR:
+        {
+            return s->pupdr;
         }
         case OFFSET_IDR:
         {
-            qemu_log("Read idr\n");
-            break;
+            return s->idr;
         }
         case OFFSET_ODR:
         {
-            qemu_log("Read odr\n");
-            break;
+            return s->odr;
         }
-        case OFFSET_BSRR ... OFFSET_LCKR:
+        case OFFSET_BSRR:
         {
-            break;
+            return s->bsrr;
         }
-        case OFFSET_AFRL ... OFFSET_AFRH:
+        case OFFSET_LCKR:
         {
-            qemu_log("read BSRR .. AFRH\n");
-            break;
+            qemu_log_mask(LOG_UNIMP, "GPIO: Locking registers not supported");
+            return s->bsrr;
+        }
+        case OFFSET_AFRL:
+        {
+            qemu_log_mask(LOG_UNIMP,
+                    "GPIO: Alternate functions (low) not supported");
+            return s->aflr;
+        }
+        case OFFSET_AFRH:
+        {
+            qemu_log_mask(LOG_UNIMP,
+                    "GPIO: Alternate functions (high) not supported");
+            return s->afhr;
         }
     }
 
     return 0;
+}
+
+// Update state of gpio module registers after write operation
+static void update_gpio_state(STM32F429GpioState* s)
+{
+
 }
 
 /* Write to the memory region. @addr is relative to @mr; @size is in bytes */
@@ -88,9 +105,13 @@ static void stm32f429_gpio_write(void *opaque, hwaddr offset, uint64_t data,
 {
     qemu_log("write - addr offset %zu data %zu size %u\n", offset, data, size);
 
-    assert(offset <= STM32F429_GPIO_MMIO_SIZE);
+    if(offset <= STM32F429_GPIO_MMIO_SIZE)
+    {
+        qemu_log_mask(LOG_GUEST_ERROR, "GPIO: offset out of bounds");
+        return;
+    }
 
-    STM32F429GpioState *s = STM32F429_GPIO(opaque);
+    STM32F429GpioState *s = opaque;
 
     switch ((StmGpioRegOffset) offset)
     {
@@ -134,18 +155,17 @@ static const MemoryRegionOps memops = {
     .read = stm32f429_gpio_read,
     .write = stm32f429_gpio_write,
     .endianness = DEVICE_NATIVE_ENDIAN,
+    .impl = {
+        .min_access_size = 1,
+        .max_access_size = 4,
+        .unaligned = false
+    },
+    .valid = {
+        .min_access_size = 1,
+        .max_access_size = 4,
+        .unaligned = false
+    }
 };
-
-static void stm32f429_gpio_reset(DeviceState *ds)
-{
-    STM32F429GpioState *s = STM32F429_GPIO(ds);
-
-    s->otyper = OTYPE_RESET_VALUE;
-    s->lckr = LCKR_RESET_VALUE;
-
-    s->odr = ODR_RESET_VALUE;
-    // input data register reset value is undefined
-}
 
 static void stm32f429_gpio_init(Object *obj)
 {
@@ -159,15 +179,41 @@ static void stm32f429_gpio_init(Object *obj)
 // TODO: Implement
 static void stm32f429_gpio_realize(DeviceState *ds, Error **errp)
 {
+    (void)ds;
+    (void)errp;
 }
+
+static const VMStateDescription vmstate_stm32f429_gpio = {
+    .name = TYPE_STM32F429_GPIO,
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT32(moder_reset_val,     STM32F429GpioState),
+        VMSTATE_UINT32(ospeedr_reset_val,     STM32F429GpioState),
+        VMSTATE_UINT32(pupdr_reset_val,     STM32F429GpioState),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+// Device properties holding specific reset values
+static Property properties_stm32f42_gpio[] = {
+    DEFINE_PROP_UINT32("moder_reset_val", STM32F429GpioState,
+            moder_reset_val, DEFAULT_RESET_VALUE),
+    DEFINE_PROP_UINT32("ospeedr_reset_val", STM32F429GpioState,
+            ospeedr_reset_val, DEFAULT_RESET_VALUE),
+    DEFINE_PROP_UINT32("pupdr_reset_val", STM32F429GpioState,
+            pupdr_reset_val, DEFAULT_RESET_VALUE),
+    DEFINE_PROP_END_OF_LIST()
+};
 
 static void stm32f429_gpio_class_init(struct ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    device_class_set_props(dc, properties_stm32f42_gpio);
     dc->realize = &stm32f429_gpio_realize;
-    dc->reset = &stm32f429_gpio_reset;
     dc->desc = type_desc;
+    dc->vmsd = &vmstate_stm32f429_gpio;
 }
 
 static const TypeInfo stm32f429_gpio_info = {
