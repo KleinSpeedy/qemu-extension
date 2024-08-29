@@ -31,3 +31,8 @@ sifive_gpio_update_output_irq(int64_t line, int64_t value) "line %" PRIi64 " val
 # aspeed_gpio.c
 aspeed_gpio_read(uint64_t offset, uint64_t value) "offset: 0x%" PRIx64 " value 0x%" PRIx64
 aspeed_gpio_write(uint64_t offset, uint64_t value) "offset: 0x%" PRIx64 " value 0x%" PRIx64
+
+# stm32f429_gpio.c
+stm32f429_gpio_read(uint64_t offset) "offset: 0x%" PRIx64
+stm32f429_gpio_write(uint64_t offset, uint64_t data) "offset: 0x%" PRIx64 " data 0x%" PRIx64
+stm32f429_gpio_update_lckr(uint32_t is_read, uint32_t value, uint32_t locks) "is_read: 0x%" PRIx32 " value: 0x%" PRIx32 " lock_state: 0x%" PRIx32

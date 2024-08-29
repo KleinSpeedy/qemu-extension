@@ -6,9 +6,22 @@
 
 /* GPIO Memory range */
 #define STM32F429_GPIO_MMIO_SIZE 0x400
+#define STM32F429_GPIO_NUM_PINS 16
 
 #define TYPE_STM32F429_GPIO "stm32f429_gpio"
 OBJECT_DECLARE_SIMPLE_TYPE(STM32F429GpioState, STM32F429_GPIO)
+
+/**
+ * @brief Locking config registers through LCKR is supported and needs a
+ * special locking sequence, see TRM 8.4.8 for details
+ */
+typedef enum Stm32F429GpioLockSequence {
+    LS_WRITE_ONE = 0,   /* first write in locking sequence occured */
+    LS_WRITE_TWO,       /* second write in locking sequence occured */
+    LS_WRITE_THREE,     /* third write in locking sequence occured */
+    LS_READ,            /* read in locking sequence occured, lock succesfull */
+    LS_LOCKED           /* lckr lock is active */
+} Stm32F429GpioLockSequence;
 
 /**
  * @brief Type represents a GPIO module in STM32F429 microcontroller
@@ -43,6 +56,12 @@ struct STM32F429GpioState
     uint32_t moder_reset_val;
     uint32_t ospeedr_reset_val;
     uint32_t pupdr_reset_val;
+
+    /* current state in locking sequence as uint8 in order to save state
+     * during Migration */
+    uint8_t lock_state;
+
+    qemu_irq pin_irqs[STM32F429_GPIO_NUM_PINS];
 };
 
 #endif // STM32F429_GPIO_H
